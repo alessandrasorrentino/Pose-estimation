@@ -1,5 +1,9 @@
 // License: Apache 2.0. See LICENSE file in root directory.
 // Copyright(c) 2016 Intel Corporation. All Rights Reserved.
+//l@le
+
+/*This framework playbacks a recorded realsense video and shows the depth frames*/
+
 
 #include <memory>
 #include <iostream>
@@ -8,12 +12,51 @@
 #include "rs_sdk.h"
 #include "unistd.h"
 
+
+
+#include "opencv2/opencv.hpp"
+#include "opencv2/highgui/highgui.hpp"
+
 using namespace rs::core;
 using namespace std;
 
 rs::core::correlated_sample_set* m_sample_set;
 int m_frame_number;
 
+cv::Mat Image2Mat(rs::core::image_interface *image)
+    {
+        cv::Mat mat;
+        switch (image->query_info().format)
+        {
+        case rs::core::pixel_format::rgba8:
+            mat = cv::Mat(image->query_info().height, image->query_info().width, CV_8UC4,
+                          (void *) (image->query_data())).clone();
+            cv::cvtColor(mat, mat, CV_RGBA2BGR);
+            break;
+        case rs::core::pixel_format::bgra8:
+            mat = cv::Mat(image->query_info().height, image->query_info().width, CV_8UC4,
+                          (void *) (image->query_data())).clone();
+            cv::cvtColor(mat, mat, CV_BGRA2BGR);
+            break;
+        case rs::core::pixel_format::bgr8:
+            mat = cv::Mat(image->query_info().height, image->query_info().width, CV_8UC3,
+                          (void *) (image->query_data())).clone();
+            break;
+        case rs::core::pixel_format::rgb8:
+            mat = cv::Mat(image->query_info().height, image->query_info().width, CV_8UC3,
+                          (void *) (image->query_data())).clone();
+            cv::cvtColor(mat, mat, CV_RGB2BGR);
+            break;
+        case rs::core::pixel_format::z16:
+            mat = cv::Mat(image->query_info().height, image->query_info().width, CV_16UC1,
+                          (void *) (image->query_data())).clone();
+            //cv::cvtColor(mat, mat,  CV_RGB2BGR);
+            break;
+        default:
+            std::runtime_error("unsupported color format");
+        }
+        return mat;
+    }
 
 int main(int argc, char* argv[]) try
 {
@@ -66,7 +109,7 @@ int main(int argc, char* argv[]) try
     //if theres no more frames the playback device will report that its not streaming
     while(device->is_streaming())
     {
-
+        bool need_create_window = true;
         device->wait_for_frames();
         for(auto stream : streams)
         {
@@ -89,7 +132,7 @@ int main(int argc, char* argv[]) try
             if(device->is_stream_enabled(stream)){
                 std::cout << "stream type: " << stream << ", timestamp: " << device->get_frame_timestamp(stream) << std::endl;
             
-            auto frame_data = device->get_frame_data(stream);
+         //   auto frame_data = device->get_frame_data(stream);
 
             //use the recorded frame...
             const void* depthBuffer = device->get_frame_data(rs::stream::depth);
@@ -99,11 +142,20 @@ int main(int argc, char* argv[]) try
                 m_sample_set->images[(int)rs::stream::depth] = nullptr;
             }
             rs::core::image_interface::image_data_with_data_releaser depth_container(depthBuffer);
-            auto depthImg = rs::core::image_interface::create_instance_from_raw_data( &info, depth_container, rs::core::stream_type::depth, rs::core::image_interface::any,m_frame_number, (uint64_t)device->get_frame_timestamp(rs::stream::depth) );
+            auto depthImg = rs::core::image_interface::create_instance_from_raw_data( &info, depth_container, rs::core::stream_type::color, rs::core::image_interface::any,m_frame_number, (uint64_t)device->get_frame_timestamp(rs::stream::depth) );
 
             m_sample_set->images[(int)rs::stream::depth] = depthImg;
             m_frame_number++;
             }
+
+            //   Show image
+            auto depthImage = m_sample_set->images[(int)rs::stream::depth];
+            cv::Mat renderImage = Image2Mat(depthImage);
+            if(need_create_window){
+                cv::namedWindow("Depth image", CV_WINDOW_AUTOSIZE);
+            }
+            cv::imshow("Depth image", renderImage);
+            cv::waitKey(1);
         }
     }
     device->stop();
@@ -116,5 +168,3 @@ catch(rs::error e)
     std::cout << e.what() << std::endl;
     return -1;
 }
-
-
